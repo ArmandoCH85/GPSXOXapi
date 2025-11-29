@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b361bbd664300dde9eede65f3501cd6c",
+    "content-hash": "b674aa876fd5d00989d23973e8157603",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -2034,6 +2034,67 @@
                 "source": "https://github.com/kirschbaum-development/eloquent-power-joins/tree/4.2.10"
             },
             "time": "2025-11-13T14:57:49+00:00"
+        },
+        {
+            "name": "kristiansnts/filament-api-login",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/kristiansnts/filament-api-login.git",
+                "reference": "cd3493b7064fafec94aa85025c3d5ad87249ef5d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/kristiansnts/filament-api-login/zipball/cd3493b7064fafec94aa85025c3d5ad87249ef5d",
+                "reference": "cd3493b7064fafec94aa85025c3d5ad87249ef5d",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^3.0|^4.0",
+                "laravel/framework": "^10.0|^11.0|^12.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^8.0|^9.0",
+                "phpunit/phpunit": "^10.0|^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Kristiansnts\\FilamentApiLogin\\FilamentApiLoginServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Kristiansnts\\FilamentApiLogin\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Kristian Epa Froditus Santoso",
+                    "email": "epafroditus.kristian@gmail.com"
+                }
+            ],
+            "description": "Token-based authentication for FilamentPHP that authenticates against external APIs without requiring local database users",
+            "keywords": [
+                "Authentication",
+                "external-api",
+                "filament",
+                "filamentphp",
+                "laravel",
+                "token-auth"
+            ],
+            "support": {
+                "issues": "https://github.com/kristiansnts/filament-api-login/issues",
+                "source": "https://github.com/kristiansnts/filament-api-login/tree/1.0.0"
+            },
+            "time": "2025-08-16T04:05:53+00:00"
         },
         {
             "name": "laravel/framework",
