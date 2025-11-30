@@ -10,7 +10,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Actions\Action;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Http;
+use Filament\Notifications\Notification;
 
 class ClientsList extends Page implements HasTable
 {
@@ -24,6 +24,29 @@ class ClientsList extends Page implements HasTable
 
     protected string $view = 'filament.pages.clients-list';
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('sincronizar')
+                ->label('Sincronizar Datos')
+                ->icon('heroicon-o-arrow-path')
+                ->color('info')
+                ->action(function () {
+                    /** @var KiangelClientService $service */
+                    $service = app(KiangelClientService::class);
+                    $service->clearCache();
+
+                    Notification::make()
+                        ->title('Datos sincronizados')
+                        ->success()
+                        ->send();
+
+                    // Recargar la tabla
+                    $this->resetTable();
+                }),
+        ];
+    }
+
     public function table(Table $table): Table
     {
         /** @var KiangelClientService $service */
@@ -34,8 +57,13 @@ class ClientsList extends Page implements HasTable
             ->defaultPaginationPageOption(25)
             ->extremePaginationLinks()
             ->records(
-                fn (int $page, int $recordsPerPage): LengthAwarePaginator =>
-                    $service->getClientsPaginated($page, $recordsPerPage)
+                function (int $page, int $recordsPerPage) use ($service): LengthAwarePaginator {
+                    // Obtener el término de búsqueda de Filament
+                    $search = $this->getTableSearch();
+
+                    // Usar el nuevo método con cache
+                    return $service->getClientsPaginatedWithCache($page, $recordsPerPage, $search);
+                }
             )
             ->columns([
                 // 1) Activo (badge verde / rojo)
