@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'kiangel' => [
+        'base_url' => env('KIANGEL_API_BASE_URL', 'https://kiangel.online/api'),
+    ],
+
 ];
