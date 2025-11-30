@@ -167,7 +167,14 @@ class ClientDevices extends Page implements HasTable
                         \Log::debug('DEBUG fillForm - Data a pasar al form: ' . json_encode($data));
                         return $data;
                     })
-                    ->form(fn (array $record): array => $this->getDeviceFormSchema())
+                    ->form(fn (array $record): array => $this->getDeviceFormSchema()),
+
+                Action::make('ver_alertas')
+                    ->label('Ver Alertas')
+                    ->url(fn (array $record): string => route('filament.admin.pages.client-alerts', [
+                        'clientId' => $this->clientId,
+                        'deviceId' => $record['id'],
+                    ]))
             ]);
     }
 
