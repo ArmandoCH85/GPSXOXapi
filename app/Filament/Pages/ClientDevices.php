@@ -8,7 +8,6 @@ use Filament\Tables\Table;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Actions\Action;
-use Filament\Schemas\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Http;
@@ -160,176 +159,105 @@ class ClientDevices extends Page implements HasTable
             ->actions([
                 Action::make('ver_detalle')
                     ->label('Ver Detalle')
-                    ->icon('heroicon-o-eye')
                     ->modalHeading(fn (array $record) => 'Detalle de ' . $record['name'])
                     ->modalWidth('5xl')
-                    ->fillForm(fn (array $record): array => $this->getDeviceData($record['id']))
-                    ->schema(fn (array $record): array => $this->getDeviceSchema())
+                    ->fillForm(function (array $record): array {
+                        \Log::debug('DEBUG fillForm - Record ID: ' . $record['id']);
+                        $data = $this->getDeviceData($record['id']);
+                        \Log::debug('DEBUG fillForm - Data a pasar al form: ' . json_encode($data));
+                        return $data;
+                    })
+                    ->form(fn (array $record): array => $this->getDeviceFormSchema())
             ]);
     }
 
     protected function getDeviceData(int $deviceId): array
     {
+        \Log::debug('DEBUG getDeviceData - Iniciando con deviceId: ' . $deviceId);
+
         $userApiHash = session('user_api_hash');
         $deviceData = [];
+
+        \Log::debug('DEBUG getDeviceData - user_api_hash existe: ' . ($userApiHash ? 'SI' : 'NO'));
 
         if ($userApiHash) {
             try {
                 $baseUrl = rtrim(config('services.kiangel.base_url'), '/');
+                $url = "{$baseUrl}/admin/device/{$deviceId}";
+
+                \Log::debug('DEBUG getDeviceData - URL a llamar: ' . $url);
+                \Log::debug('DEBUG getDeviceData - Parámetros: ' . json_encode([
+                    'user_api_hash' => substr($userApiHash, 0, 10) . '...',
+                    'lang' => 'es',
+                ]));
+
                 $response = Http::acceptJson()
                     ->timeout(60)
                     ->connectTimeout(60)
-                    ->get("{$baseUrl}/admin/device/{$deviceId}", [
+                    ->get($url, [
                         'user_api_hash' => $userApiHash,
-                        'lang' => 'en',
+                        'lang' => 'es',
                     ]);
+
+                \Log::debug('DEBUG getDeviceData - Response status: ' . $response->status());
+                \Log::debug('DEBUG getDeviceData - Response successful: ' . ($response->successful() ? 'SI' : 'NO'));
 
                 if ($response->successful()) {
                     $json = $response->json();
+                    \Log::debug('DEBUG getDeviceData - JSON completo: ' . json_encode($json));
                     $deviceData = $json['data'] ?? [];
+                    \Log::debug('DEBUG getDeviceData - deviceData extraído: ' . json_encode($deviceData));
+                } else {
+                    \Log::debug('DEBUG getDeviceData - Response body: ' . $response->body());
                 }
             } catch (\Exception $e) {
                 \Log::error('Error fetching device detail: ' . $e->getMessage());
+                \Log::error('Error details: ' . $e->getTraceAsString());
             }
+        } else {
+            \Log::debug('DEBUG getDeviceData - No hay user_api_hash en sesión');
         }
 
+        \Log::debug('DEBUG getDeviceData - Retornando deviceData: ' . json_encode($deviceData));
         return $deviceData;
     }
 
-    protected function getDeviceSchema(): array
+    protected function getDeviceFormSchema(): array
     {
-        return [
-                Section::make('Información General')
-                    ->schema([
-                        TextEntry::make('id')
-                            ->label('ID'),
-                        TextEntry::make('name')
-                            ->label('Nombre'),
-                        TextEntry::make('active')
-                            ->label('Activo')
-                            ->badge()
-                            ->formatStateUsing(fn ($state) => $state ? 'Activo' : 'Inactivo')
-                            ->color(fn ($state) => $state ? 'success' : 'danger'),
-                        TextEntry::make('imei')
-                            ->label('IMEI')
-                            ->placeholder('-'),
-                        TextEntry::make('sim_number')
-                            ->label('Número SIM')
-                            ->placeholder('-'),
-                        TextEntry::make('protocol')
-                            ->label('Protocolo')
-                            ->placeholder('-'),
-                    ])
-                    ->columns(3)
-                    ->collapsible(),
+        \Log::debug('DEBUG getDeviceFormSchema - Iniciando');
 
-                Section::make('Datos del Vehículo')
-                    ->schema([
-                        TextEntry::make('device_model')
-                            ->label('Modelo')
-                            ->placeholder('-'),
-                        TextEntry::make('plate_number')
-                            ->label('Placa')
-                            ->placeholder('-'),
-                        TextEntry::make('vin')
-                            ->label('VIN')
-                            ->placeholder('-'),
-                        TextEntry::make('registration_number')
-                            ->label('Número de Registro')
-                            ->placeholder('-'),
-                        TextEntry::make('object_owner')
-                            ->label('Propietario')
-                            ->placeholder('-'),
-                    ])
-                    ->columns(2)
-                    ->collapsible(),
+        $schema = [
+            \Filament\Forms\Components\TextInput::make('id')
+                ->label('ID')
+                ->disabled(),
 
-                Section::make('Configuración')
-                    ->schema([
-                        TextEntry::make('icon_id')
-                            ->label('ID de Ícono')
-                            ->placeholder('-'),
-                        TextEntry::make('timezone_id')
-                            ->label('Zona Horaria')
-                            ->placeholder('-'),
-                        TextEntry::make('expiration_date')
-                            ->label('Fecha de Vencimiento')
-                            ->placeholder('-'),
-                        TextEntry::make('tail_length')
-                            ->label('Longitud de Ruta')
-                            ->placeholder('-'),
-                        TextEntry::make('tail_color')
-                            ->label('Color de Ruta')
-                            ->placeholder('-'),
-                    ])
-                    ->columns(3)
-                    ->collapsible(),
+            \Filament\Forms\Components\TextInput::make('name')
+                ->label('Nombre del Vehículo')
+                ->disabled(),
 
-                Section::make('Combustible')
-                    ->schema([
-                        TextEntry::make('fuel_measurement_id')
-                            ->label('Medición de Combustible')
-                            ->placeholder('-'),
-                        TextEntry::make('fuel_quantity')
-                            ->label('Cantidad')
-                            ->placeholder('-'),
-                        TextEntry::make('fuel_price')
-                            ->label('Precio')
-                            ->placeholder('-'),
-                        TextEntry::make('min_fuel_fillings')
-                            ->label('Mín. Llenado')
-                            ->placeholder('-'),
-                        TextEntry::make('min_fuel_thefts')
-                            ->label('Mín. Robo')
-                            ->placeholder('-'),
-                    ])
-                    ->columns(3)
-                    ->collapsible(),
+            \Filament\Forms\Components\TextInput::make('active')
+                ->label('Activo')
+                ->disabled(),
 
-                Section::make('Motor')
-                    ->schema([
-                        TextEntry::make('detect_engine')
-                            ->label('Detección de Motor')
-                            ->placeholder('-'),
-                        TextEntry::make('engine_hours')
-                            ->label('Horas de Motor')
-                            ->placeholder('-'),
-                        TextEntry::make('engine_status')
-                            ->label('Estado del Motor')
-                            ->placeholder('-'),
-                    ])
-                    ->columns(3)
-                    ->collapsible(),
+            \Filament\Forms\Components\TextInput::make('imei')
+                ->label('IMEI')
+                ->disabled(),
 
-                Section::make('Estadísticas y Configuración Avanzada')
-                    ->schema([
-                        TextEntry::make('total_distance')
-                            ->label('Distancia Total')
-                            ->formatStateUsing(fn ($state) => $state ? number_format($state, 2) . ' km' : '-'),
-                        TextEntry::make('min_moving_speed')
-                            ->label('Velocidad Mínima')
-                            ->formatStateUsing(fn ($state) => $state ? $state . ' km/h' : '-'),
-                        TextEntry::make('stop_duration')
-                            ->label('Duración de Parada')
-                            ->placeholder('-'),
-                        TextEntry::make('gprs_templates_only')
-                            ->label('Solo Templates GPRS')
-                            ->formatStateUsing(fn ($state) => $state ? 'Sí' : 'No'),
-                        TextEntry::make('moved_timestamp')
-                            ->label('Última Movida')
-                            ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i:s', $state) : '-'),
-                    ])
-                    ->columns(2)
-                    ->collapsible(),
+            \Filament\Forms\Components\TextInput::make('sim_number')
+                ->label('Número SIM')
+                ->disabled(),
 
-                Section::make('Notas Adicionales')
-                    ->schema([
-                        TextEntry::make('additional_notes')
-                            ->label('Notas')
-                            ->placeholder('Sin notas')
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible(),
+            \Filament\Forms\Components\TextInput::make('device_model')
+                ->label('Modelo')
+                ->disabled(),
+
+            \Filament\Forms\Components\TextInput::make('plate_number')
+                ->label('Placa')
+                ->disabled(),
         ];
+
+        \Log::debug('DEBUG getDeviceFormSchema - Schema creado con ' . count($schema) . ' campos');
+
+        return $schema;
     }
 }
