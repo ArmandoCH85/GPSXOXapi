@@ -109,13 +109,8 @@ class ClientsList extends Page implements HasTable
                 Action::make('ver_vehiculos')
                     ->label('Ver Vehículos')
                     ->icon('heroicon-o-truck')
-                    ->modalHeading(fn (array $record) => 'Vehículos de ' . $record['email'])
-                    ->modalWidth('md')
-                    ->modalContent(fn (array $record) => view('filament.modals.livewire-wrapper', [
-                    'clientId' => $record['id'],
-                ]))
-                ->modalSubmitAction(false)
-                ->modalCancelActionLabel('Cerrar'),
+                    ->url(fn (array $record): string => route('filament.admin.pages.client-devices', ['clientId' => $record['id']]))
+                    ->openUrlInNewTab(false),
             ]);
     }
 }

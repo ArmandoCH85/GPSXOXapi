@@ -47,6 +47,8 @@ class KiangelClientService
         ], $extraParams);
 
         $response = Http::acceptJson()
+            ->timeout(60)
+            ->connectTimeout(60)
             ->get($this->baseUrl() . '/admin/clients', $query);
 
         if ($response->failed()) {
