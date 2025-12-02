@@ -55,7 +55,7 @@ class ClientDevicesList extends Component
                     'user_api_hash' => $userApiHash,
                     'lang' => 'en',
                     'page' => $this->page,
-                    'per_page' => $this->perPage,
+                    'limit' => $this->perPage, // Cambiado de 'per_page' a 'limit'
                 ];
 
                 if (!empty($this->search)) {

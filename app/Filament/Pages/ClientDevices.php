@@ -80,20 +80,19 @@ class ClientDevices extends Page implements HasTable
                     $url = "{$baseUrl}/admin/client/{$this->clientId}/devices";
 
                     $search = $this->getTableSearch();
-                    $isSearchById = ctype_digit((string) $search);
-                    
-                    // Siempre obtenemos todos los dispositivos (o una cantidad grande) para poder filtrar localmente
+
+                    // Usar el parámetro 'limit' con el valor que viene de Filament
                     $params = [
                         'user_api_hash' => $userApiHash,
                         'lang' => 'en',
-                        'page' => 1,
-                        'per_page' => 1000, // Obtener muchos para filtrar localmente
+                        'page' => $page,
+                        'limit' => $recordsPerPage, // ¡Ahora usa 'limit' en lugar de 'per_page'!
                     ];
 
-                    // SIEMPRE filtramos localmente (no enviamos 's' a la API para mayor control)
-                    // if (!empty($search) && !$isSearchById) {
-                    //     $params['s'] = $search;
-                    // }
+                    // Enviar parámetro de búsqueda al API si existe
+                    if (!empty($search)) {
+                        $params['s'] = $search;
+                    }
 
                     $response = Http::acceptJson()
                         ->timeout(60)
@@ -102,35 +101,16 @@ class ClientDevices extends Page implements HasTable
 
                     if ($response->successful()) {
                         $data = $response->json();
-                        $allDevices = collect($data['data'] ?? []);
-                        
-                        // FILTRADO LOCAL - funciona para ID y nombre
-                        if (!empty($search)) {
-                            $allDevices = $allDevices->filter(function ($device) use ($search, $isSearchById) {
-                                // Si busca por ID, comparar ID
-                                if ($isSearchById) {
-                                    return (string) $device['id'] === (string) $search;
-                                }
-                                
-                                // Si busca por nombre, comparar nombre completo o parcial
-                                $deviceName = strtolower((string) $device['name']);
-                                $searchLower = strtolower((string) $search);
-                                
-                                // Buscar coincidencia exacta o parcial en el nombre
-                                return str_contains($deviceName, $searchLower);
-                            });
-                        }
-                        
-                        // Paginación manual
-                        $total = $allDevices->count();
-                        $offset = ($page - 1) * $recordsPerPage;
-                        $paginatedDevices = $allDevices->slice($offset, $recordsPerPage)->values();
+                        $devices = $data['data'] ?? [];
+                        $total = $data['total'] ?? 0;
+                        $currentPage = $data['current_page'] ?? $page;
+                        $perPage = $data['per_page'] ?? $recordsPerPage;
 
                         return new LengthAwarePaginator(
-                            items: $paginatedDevices,
+                            items: $devices,
                             total: $total,
-                            perPage: $recordsPerPage,
-                            currentPage: $page,
+                            perPage: $perPage,
+                            currentPage: $currentPage,
                             options: [
                                 'path' => request()->url(),
                                 'query' => request()->query(),
