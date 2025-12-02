@@ -65,6 +65,11 @@ class ClientAlerts extends Page implements HasTable
         return 'Alertas de ' . $this->clientEmail;
     }
 
+    public function refreshTable(): void
+    {
+        $this->resetTable();
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -80,89 +85,82 @@ class ClientAlerts extends Page implements HasTable
 
                 try {
                     $baseUrl = rtrim(config('services.kiangel.base_url'), '/');
-
-                    // Obtener todos los dispositivos del cliente primero
-                    $devicesUrl = "{$baseUrl}/admin/client/{$this->clientId}/devices";
-                    $devicesParams = [
-                        'user_api_hash' => $userApiHash,
-                        'lang' => 'es',
-                        'page' => 1,
-                        'per_page' => 1000,
-                    ];
-
-                    \Log::debug('DEBUG getAlerts - Iniciando obtención de alertas para cliente: ' . $this->clientId);
-                    \Log::debug('DEBUG getAlerts - URL dispositivos: ' . $devicesUrl);
-
-                    $devicesResponse = Http::acceptJson()
-                        ->timeout(60)
-                        ->connectTimeout(60)
-                        ->get($devicesUrl, $devicesParams);
-
-                    \Log::debug('DEBUG getAlerts - Status response dispositivos: ' . $devicesResponse->status());
-
-                    if (!$devicesResponse->successful()) {
-                        \Log::debug('DEBUG getAlerts - Error obteniendo dispositivos: ' . $devicesResponse->body());
-                        return new LengthAwarePaginator([], 0, 15);
-                    }
-
-                    $devicesData = $devicesResponse->json();
-                    $devices = collect($devicesData['data'] ?? []);
-                    \Log::debug('DEBUG getAlerts - Total dispositivos obtenidos: ' . $devices->count());
-
-                    // Recopilar todas las alertas de todos los dispositivos (o solo del específico)
                     $allAlerts = collect();
 
-                    // Si hay deviceId, filtrar dispositivos
-                    $devicesToProcess = $this->deviceId
-                        ? $devices->where('id', $this->deviceId)
-                        : $devices;
+                    // Si hay deviceId específico, llamar directo a la API
+                    if ($this->deviceId) {
+                        $eventsUrl = "{$baseUrl}/get_events";
+                        \Log::debug('DEBUG getAlerts - Llamando API directa para dispositivo: ' . $this->deviceId);
 
-                    foreach ($devicesToProcess as $device) {
-                        $deviceId = $device['id'];
-                        $alertsUrl = "{$baseUrl}/devices/{$deviceId}/alerts";
+                        $alertsResponse = Http::acceptJson()
+                            ->timeout(60)
+                            ->connectTimeout(60)
+                            ->get($eventsUrl, [
+                                'device_id' => $this->deviceId,
+                                'user_api_hash' => $userApiHash,
+                                'lang' => 'es',
+                            ]);
 
-                        \Log::debug('DEBUG getAlerts - Llamando API para dispositivo: ' . $deviceId);
-                        \Log::debug('DEBUG getAlerts - URL: ' . $alertsUrl);
+                        \Log::debug('DEBUG getAlerts - Response status: ' . $alertsResponse->status());
 
-                        try {
-                            $alertsResponse = Http::acceptJson()
-                                ->timeout(60)
-                                ->connectTimeout(60)
-                                ->get($alertsUrl, [
-                                    'user_api_hash' => $userApiHash,
-                                    'lang' => 'es',
-                                ]);
+                        if ($alertsResponse->successful()) {
+                            $alertsData = $alertsResponse->json();
+                            \Log::debug('DEBUG getAlerts - JSON: ' . json_encode($alertsData));
+                            $allAlerts = collect($alertsData['items']['data'] ?? []);
+                        } else {
+                            \Log::debug('DEBUG getAlerts - Error: ' . $alertsResponse->body());
+                        }
+                    } else {
+                        // Sin deviceId: obtener todos los dispositivos del cliente
+                        $devicesUrl = "{$baseUrl}/admin/client/{$this->clientId}/devices";
+                        \Log::debug('DEBUG getAlerts - Obteniendo dispositivos del cliente: ' . $this->clientId);
 
-                            \Log::debug('DEBUG getAlerts - Response status: ' . $alertsResponse->status());
-                            \Log::debug('DEBUG getAlerts - Response successful: ' . ($alertsResponse->successful() ? 'SI' : 'NO'));
+                        $devicesResponse = Http::acceptJson()
+                            ->timeout(60)
+                            ->connectTimeout(60)
+                            ->get($devicesUrl, [
+                                'user_api_hash' => $userApiHash,
+                                'lang' => 'es',
+                                'page' => 1,
+                                'per_page' => 1000,
+                            ]);
 
-                            if ($alertsResponse->successful()) {
-                                $alertsData = $alertsResponse->json();
-                                \Log::debug('DEBUG getAlerts - JSON completo: ' . json_encode($alertsData));
+                        if (!$devicesResponse->successful()) {
+                            \Log::debug('DEBUG getAlerts - Error obteniendo dispositivos: ' . $devicesResponse->body());
+                            return new LengthAwarePaginator([], 0, 15);
+                        }
 
-                                $deviceAlerts = collect($alertsData['data'] ?? []);
-                                \Log::debug('DEBUG getAlerts - Total alertas para dispositivo ' . $deviceId . ': ' . $deviceAlerts->count());
+                        $devicesData = $devicesResponse->json();
+                        $devices = collect($devicesData['data'] ?? []);
+                        \Log::debug('DEBUG getAlerts - Total dispositivos: ' . $devices->count());
 
-                                // Agregar nombre del dispositivo a cada alerta
-                                $deviceAlerts = $deviceAlerts->map(function ($alert) use ($device) {
-                                    $alert['device_name'] = $device['name'];
-                                    $alert['device_id'] = $device['id'];
-                                    return $alert;
-                                });
+                        foreach ($devices as $device) {
+                            $deviceId = $device['id'];
+                            $eventsUrl = "{$baseUrl}/get_events";
 
-                                $allAlerts = $allAlerts->merge($deviceAlerts);
-                                \Log::debug('DEBUG getAlerts - Total acumulado de alertas: ' . $allAlerts->count());
-                            } else {
-                                \Log::debug('DEBUG getAlerts - Response body: ' . $alertsResponse->body());
+                            try {
+                                $alertsResponse = Http::acceptJson()
+                                    ->timeout(60)
+                                    ->connectTimeout(60)
+                                    ->get($eventsUrl, [
+                                        'device_id' => $deviceId,
+                                        'user_api_hash' => $userApiHash,
+                                        'lang' => 'es',
+                                    ]);
+
+                                if ($alertsResponse->successful()) {
+                                    $alertsData = $alertsResponse->json();
+                                    $deviceAlerts = collect($alertsData['items']['data'] ?? []);
+                                    $allAlerts = $allAlerts->merge($deviceAlerts);
+                                }
+                            } catch (\Exception $e) {
+                                \Log::error("Error fetching events for device {$deviceId}: " . $e->getMessage());
+                                continue;
                             }
-                        } catch (\Exception $e) {
-                            \Log::error("Error fetching alerts for device {$deviceId}: " . $e->getMessage());
-                            \Log::error("Error details: " . $e->getTraceAsString());
-                            continue;
                         }
                     }
 
-                    \Log::debug('DEBUG getAlerts - Total final de alertas: ' . $allAlerts->count());
+                    \Log::debug('DEBUG getAlerts - Total final de eventos: ' . $allAlerts->count());
 
                     // Aplicar filtro de búsqueda si existe
                     $search = $this->getTableSearch();
@@ -183,9 +181,9 @@ class ClientAlerts extends Page implements HasTable
                         });
                     }
 
-                    // Ordenar por fecha más reciente
+                    // Ordenar por fecha más reciente (campo 'time')
                     $allAlerts = $allAlerts->sortByDesc(function ($alert) {
-                        return $alert['timestamp'] ?? 0;
+                        return $alert['time'] ?? '';
                     });
 
                     // Paginación manual
@@ -221,22 +219,31 @@ class ClientAlerts extends Page implements HasTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('id')
-                    ->label('ID Alerta')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold'),
+                TextColumn::make('type')
+                    ->label('Tipo')
+                    ->badge()
+                    ->color('info'),
 
-                TextColumn::make('name')
-                    ->label('Tipo de Alerta')
+                TextColumn::make('message')
+                    ->label('Mensaje')
                     ->searchable()
                     ->wrap(),
 
-                TextColumn::make('active')
-                    ->label('Estado')
-                    ->badge()
-                    ->formatStateUsing(fn (bool $state): string => $state ? 'Activa' : 'Inactiva')
-                    ->color(fn (bool $state): string => $state ? 'success' : 'danger'),
+                TextColumn::make('time')
+                    ->label('Fecha/Hora')
+                    ->dateTime('d/m/Y H:i:s')
+                    ->sortable(),
+
+                TextColumn::make('location')
+                    ->label('Ubicación')
+                    ->state(fn ($record) => ($record['latitude'] ?? 0) . ', ' . ($record['longitude'] ?? 0))
+                    ->copyable()
+                    ->copyMessage('Coordenadas copiadas'),
+
+                TextColumn::make('speed')
+                    ->label('Velocidad')
+                    ->suffix(' km/h')
+                    ->alignCenter(),
             ]);
     }
 }
