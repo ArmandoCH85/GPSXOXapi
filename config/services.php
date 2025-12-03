@@ -39,4 +39,11 @@ return [
         'base_url' => env('KIANGEL_API_BASE_URL', 'https://kiangel.online/api'),
     ],
 
+    'greenapi' => [
+        'api_url'      => env('GREENAPI_API_URL', 'https://7105.api.green-api.com'),
+        'media_url'    => env('GREENAPI_MEDIA_URL', 'https://7105.media.green-api.com'),
+        'id_instance'  => env('GREENAPI_ID_INSTANCE'),
+        'api_token'    => env('GREENAPI_API_TOKEN'),
+    ],
+
 ];

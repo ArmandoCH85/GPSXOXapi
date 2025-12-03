@@ -9,6 +9,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Http;
+use App\Services\GreenApiWhatsAppService;
 
 class ClientAlerts extends Page implements HasTable
 {
@@ -21,6 +22,14 @@ class ClientAlerts extends Page implements HasTable
     public int $clientId;
     public ?int $deviceId = null;
     public string $clientEmail = '';
+    public ?string $clientPhone = null;
+
+    protected GreenApiWhatsAppService $whatsappService;
+
+    public function __construct()
+    {
+        $this->whatsappService = new GreenApiWhatsAppService();
+    }
 
     public function mount(): void
     {
@@ -31,7 +40,7 @@ class ClientAlerts extends Page implements HasTable
             abort(404, 'Cliente no encontrado');
         }
 
-        // Obtener email del cliente
+        // Obtener email y teléfono del cliente
         $userApiHash = session('user_api_hash');
         if ($userApiHash) {
             try {
@@ -50,6 +59,7 @@ class ClientAlerts extends Page implements HasTable
                     $clients = $data['data'] ?? [];
                     $client = collect($clients)->firstWhere('id', $this->clientId);
                     $this->clientEmail = $client['email'] ?? 'Cliente #' . $this->clientId;
+                    $this->clientPhone = $client['phone_number'] ?? null;
                 }
             } catch (\Exception $e) {
                 \Log::error('Error fetching client: ' . $e->getMessage());
@@ -68,6 +78,167 @@ class ClientAlerts extends Page implements HasTable
     public function refreshTable(): void
     {
         $this->resetTable();
+
+        // Enviar alertas nuevas por WhatsApp
+        $this->sendNewAlertsToWhatsApp();
+    }
+
+    /**
+     * Envía las alertas más nuevas por WhatsApp usando Green API
+     */
+    public function sendNewAlertsToWhatsApp(): void
+    {
+        try {
+            // Verificar si el cliente tiene teléfono configurado
+            if (!$this->clientPhone) {
+                \Log::info("Cliente {$this->clientId} no tiene teléfono configurado para alertas WhatsApp");
+                return;
+            }
+
+            // Obtener todas las alertas actuales
+            $userApiHash = session('user_api_hash');
+            if (!$userApiHash) {
+                \Log::warning('No hay user_api_hash en sesión para enviar alertas');
+                return;
+            }
+
+            $baseUrl = rtrim(config('services.kiangel.base_url'), '/');
+            $allAlerts = collect();
+
+            // Obtener alertas según si hay deviceId específico o no
+            if ($this->deviceId) {
+                $alertsResponse = Http::acceptJson()
+                    ->timeout(60)
+                    ->connectTimeout(60)
+                    ->get("{$baseUrl}/get_events", [
+                        'device_id' => $this->deviceId,
+                        'user_api_hash' => $userApiHash,
+                        'lang' => 'es',
+                    ]);
+
+                if ($alertsResponse->successful()) {
+                    $alertsData = $alertsResponse->json();
+                    $allAlerts = collect($alertsData['items']['data'] ?? []);
+                }
+            } else {
+                // Obtener todos los dispositivos del cliente
+                $devicesResponse = Http::acceptJson()
+                    ->timeout(60)
+                    ->connectTimeout(60)
+                    ->get("{$baseUrl}/admin/client/{$this->clientId}/devices", [
+                        'user_api_hash' => $userApiHash,
+                        'lang' => 'es',
+                        'page' => 1,
+                        'per_page' => 1000,
+                    ]);
+
+                if ($devicesResponse->successful()) {
+                    $devicesData = $devicesResponse->json();
+                    $devices = collect($devicesData['data'] ?? []);
+
+                    foreach ($devices as $device) {
+                        $deviceId = $device['id'];
+                        $alertsResponse = Http::acceptJson()
+                            ->timeout(60)
+                            ->connectTimeout(60)
+                            ->get("{$baseUrl}/get_events", [
+                                'device_id' => $deviceId,
+                                'user_api_hash' => $userApiHash,
+                                'lang' => 'es',
+                            ]);
+
+                        if ($alertsResponse->successful()) {
+                            $alertsData = $alertsResponse->json();
+                            $deviceAlerts = collect($alertsData['items']['data'] ?? []);
+                            $allAlerts = $allAlerts->merge($deviceAlerts);
+                        }
+                    }
+                }
+            }
+
+            if ($allAlerts->isEmpty()) {
+                \Log::info("No hay alertas para enviar por WhatsApp - Cliente: {$this->clientId}, Dispositivo: " . ($this->deviceId ?? 'todos'));
+                return;
+            }
+
+            // Ordenar por fecha más reciente
+            $allAlerts = $allAlerts->sortByDesc(function ($alert) {
+                return $alert['time'] ?? '';
+            });
+
+            // Crear clave única para la sesión basada en cliente y dispositivo
+            $sessionKey = "last_alert_time_client_{$this->clientId}_device_" . ($this->deviceId ?? 'all');
+
+            // Obtener la timestamp de la última alerta vista (de la sesión)
+            $lastAlertTime = session($sessionKey);
+
+            // Filtrar solo las alertas más nuevas que la última vista
+            $newAlerts = $allAlerts->filter(function ($alert) use ($lastAlertTime) {
+                if (!$lastAlertTime) {
+                    return true; // Si es la primera vez, todas son "nuevas"
+                }
+
+                $alertTime = strtotime($alert['time'] ?? '');
+                return $alertTime > $lastAlertTime;
+            });
+
+            if ($newAlerts->isEmpty()) {
+                \Log::info("No hay alertas nuevas para enviar por WhatsApp - Cliente: {$this->clientId}, Dispositivo: " . ($this->deviceId ?? 'todos'));
+                return;
+            }
+
+            // Preparar mensaje con las alertas nuevas
+            $message = "🚨 *NUEVAS ALERTAS DE VEHÍCULOS*\n\n";
+            $message .= "Cliente: {$this->clientEmail}\n";
+            $message .= "Dispositivo: " . ($this->deviceId ?? 'Todos') . "\n";
+            $message .= "Cantidad: " . $newAlerts->count() . " alerta(s)\n\n";
+
+            // Agregar detalles de cada alerta nueva
+            foreach ($newAlerts->take(10) as $alert) {
+                $deviceName = $alert['device_name'] ?? 'N/A';
+                $type = $alert['type'] ?? 'N/A';
+                $alertMessage = $alert['message'] ?? 'Sin mensaje';
+                $time = $alert['time'] ?? 'N/A';
+                $location = ($alert['latitude'] ?? 'N/A') . ', ' . ($alert['longitude'] ?? 'N/A');
+                $speed = $alert['speed'] ?? 'N/A';
+
+                $message .= "━━━━━━━━━━━━━━━━━━━━\n";
+                $message .= "🔔 *Alerta*\n";
+                $message .= "Vehículo: {$deviceName} (ID: {$alert['device_id']})\n";
+                $message .= "Tipo: {$type}\n";
+                $message .= "Mensaje: {$alertMessage}\n";
+                $message .= "📅 Fecha: {$time}\n";
+                $message .= "📍 Ubicación: {$location}\n";
+                $message .= "🛣️ Velocidad: {$speed} km/h\n";
+                $message .= "\n";
+            }
+
+            if ($newAlerts->count() > 10) {
+                $message .= "\n... y " . ($newAlerts->count() - 10) . " alerta(s) más.";
+            }
+
+            $message .= "\n\n_Estas alertas fueron enviadas automáticamente desde el sistema GPS_";
+
+            // Enviar por WhatsApp
+            $phoneNumber = preg_replace('/\D/', '', $this->clientPhone);
+            if ($phoneNumber) {
+                \Log::info("Enviando {$newAlerts->count()} alerta(s) nueva(s) por WhatsApp a {$phoneNumber} para cliente {$this->clientId}");
+                $this->whatsappService->sendMessage($phoneNumber, $message);
+                \Log::info('Alertas enviadas por WhatsApp exitosamente');
+
+                // Actualizar la timestamp de la última alerta vista con la más reciente
+                $latestAlertTime = strtotime($allAlerts->first()['time'] ?? '');
+                if ($latestAlertTime) {
+                    session([$sessionKey => $latestAlertTime]);
+                    \Log::debug("Timestamp actualizada en sesión: {$latestAlertTime}");
+                }
+            } else {
+                \Log::warning("Número de teléfono inválido para cliente {$this->clientId}: {$this->clientPhone}");
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error enviando alertas por WhatsApp: ' . $e->getMessage());
+        }
     }
 
     public function table(Table $table): Table
