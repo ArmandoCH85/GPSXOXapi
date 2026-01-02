@@ -194,4 +194,45 @@ class KiangelClientService
             ],
         );
     }
+
+    /**
+     * Sincroniza los clientes del API con la tabla users local.
+     * Crea usuarios si no existen (basado en email) y actualiza si existen.
+     */
+    public function syncUsersFromApi(): int
+    {
+        // 1. Obtener todos los clientes del API (forzar carga fresca, sin cache)
+        $apiClients = $this->getAllClientsFromAPI();
+        
+        $syncedCount = 0;
+
+        foreach ($apiClients as $clientData) {
+            $email = $clientData['email'] ?? null;
+
+            // Validar que venga el email, que es nuestra clave única
+            if (empty($email)) {
+                continue;
+            }
+
+            // Usamos firstOrNew para tener control total antes de guardar
+            $user = \App\Models\User::firstOrNew(['email' => $email]);
+            
+            // Requerimiento: Name debe ser el correo electrónico
+            $user->name = $email;
+
+            // Si es nuevo, asignamos password aleatorio (obligatorio por BD, aunque no se use)
+            if (!$user->exists) {
+                $user->password = \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(16));
+            }
+
+            $user->save();
+            $syncedCount++;
+        }
+
+        // Actualizamos el cache para que la lista refleje los datos recientes si se usa en otro lado
+        $this->clearCache();
+        $this->getAllClientsFromCache();
+
+        return $syncedCount;
+    }
 }
