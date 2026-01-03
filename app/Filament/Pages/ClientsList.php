@@ -9,6 +9,7 @@ use Filament\Tables\Table;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Filament\Notifications\Notification;
 
@@ -179,6 +180,50 @@ class ClientsList extends Page implements HasTable
                     )
                     ->action(function (array $record) {
                         $this->toggleNotificationChannel($record);
+                    }),
+
+                Action::make('configurar_whatsapp')
+                    ->label('Configurar WhatsApp')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->visible(fn (array $record) => $this->getNotificationChannel($record['email'] ?? '') === 'whatsapp')
+                    ->form([
+                        TextInput::make('whatsapp_number')
+                            ->label('Número de WhatsApp')
+                            ->placeholder('51954187815')
+                            ->required(),
+                    ])
+                    ->action(function (array $data, array $record) {
+                        $email = $record['email'] ?? null;
+                        $number = $data['whatsapp_number'] ?? '';
+
+                        if (empty($email)) {
+                            Notification::make()->title('Error: Email no válido')->danger()->send();
+                            return;
+                        }
+
+                        $clean = preg_replace('/\D/', '', $number);
+                        if (strlen($clean) === 9) {
+                            $clean = '51' . $clean;
+                        }
+                        if (empty($clean)) {
+                            Notification::make()->title('Ingrese un número válido')->danger()->send();
+                            return;
+                        }
+
+                        $user = \App\Models\User::firstOrCreate(
+                            ['email' => $email],
+                            ['name' => $email, 'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(16))]
+                        );
+
+                        $setting = \App\Models\UserNotificationSetting::firstOrNew(['user_id' => $user->id]);
+                        $setting->channel = 'whatsapp';
+                        $setting->whatsapp_number = $clean;
+                        $setting->save();
+
+                        Notification::make()
+                            ->title('Número de WhatsApp actualizado')
+                            ->success()
+                            ->send();
                     }),
             ]);
     }
