@@ -6,10 +6,7 @@ use App\Models\GpsWoxAccount;
 use App\Http\Controllers\WhatsAppController;
 
 Route::get('/', function () {
-    if (app()->environment('production')) {
-        return redirect()->to('/admin/login');
-    }
-    return view('welcome');
+    return redirect()->to('/admin/login');
 });
 
 // WhatsApp Green API Test Routes
